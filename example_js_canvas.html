@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="m4.js"></script>
+</head>
+<body>
+<canvas id="myCanvas" style="width: 399px; height: 507px;"></canvas>
+
+
+<script>
+
+
+    const VERTEX_SHADER = `
+attribute vec2 VertexPos2D;
+attribute vec2 VertTexCoord;
+
+uniform mat4 ProjectionMatrix;
+uniform mat4 ModelViewMatrix;
+
+varying vec2 FragTexCoord;
+void main()
+{
+    gl_Position = ProjectionMatrix * ModelViewMatrix * vec4(VertexPos2D.x, VertexPos2D.y, 0.0, 1.0);
+    FragTexCoord = VertTexCoord;
+}
+`
+
+    const FRAGMENT_SHADER = `
+precision mediump float;
+varying vec2 FragTexCoord;
+
+uniform sampler2D TextureUnit;
+
+void main()
+{
+    gl_FragColor = texture2D(TextureUnit, FragTexCoord);
+}
+`
+    var globalImages;
+    var promises = []
+    var imagePath = "mapwhite.png";
+    var promise = new Promise(function (resolve, reject) {
+        var image = new Image();
+        image.src = imagePath;
+        image.addEventListener("load", function () {
+            resolve(image);
+        });
+        image.addEventListener("error", function () {
+            reject(new Error("Failed to load image: " + imagePath));
+        });
+    });
+    promises.push(promise);
+
+    Promise.all(promises).then(function (images) {
+        console.log("All images loaded", images);
+        globalImages = images;
+        initializeGL();
+        console.log('programId', programId);
+        console.log('textureId', textureId);
+        // paintGL();
+        window.requestAnimationFrame(paintGL);
+    }).catch(function (error) {
+        // Handle the error
+    });
+
+
+    var canvas = document.getElementById("myCanvas");
+    var gl = canvas.getContext("webgl");
+    var programId;
+    var textureId;
+    var texCoordLocation;
+    var vertexPos2DLocation;
+    var texUnitLocation;
+    var projectionMatrixLocation;
+    var modelViewMatrixLocation;
+    var screenWidth = 399;
+    var screenHeight = 507;
+    var locs = [[128, 208], [128, 176]];
+
+    function ortho(left, right, bottom, top) {
+        return [
+            2 / (right - left), 0, 0, 0,
+            0, 2 / (top - bottom), 0, 0,
+            0, 0, 1, 0,
+            -(right + left) / (right - left), -(top + bottom) / (top - bottom), 0, 1
+        ];
+    }
+
+    function vec3(x, y, z) {
+        return new Float32Array([x, y, z]);
+    }
+
+    function translate(v3) {
+        return new Float32Array([
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            v3[0], v3[1], v3[2], 1
+        ]);
+    }
+
+
+    function mat4() {
+        return new Float32Array([
+            1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
+            0, 0, 0, 1
+        ]);
+    }
+
+    var texture_width = 192;
+    var texture_height = 160;
+    function getVBO(rect) {
+        var [x, y, w, h] = rect;
+        var tex_top = y / texture_height
+        var tex_bottom = (y + h) / texture_height
+        var tex_left = x / texture_width
+        var tex_right = (x + w) / texture_width
+        var quad_width = w
+        var quad_height = h
+
+        var vertices = new Float32Array([
+            0, 0, tex_left, tex_top,
+            quad_width, 0, tex_right, tex_top,
+            quad_width, quad_height, tex_right, tex_bottom,
+            0, quad_height, tex_left, tex_bottom,
+        ]);
+        var vbo = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        return vbo;
+    }
+
+    function getIBO() {
+        // var indices = [
+        //     0, 1, 2,
+        //     2, 1, 3
+        // ];
+        var indices = [0, 1, 2, 3];
+        var ibo = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int32Array(indices), gl.STATIC_DRAW);
+        return ibo;
+    }
+
+
+    var IBO = getIBO();
+    var grassRect = [32, 0, 32, 32];
+    var grassVBO = getVBO(grassRect);
+    console.log("grassVBO", grassVBO);
+    console.log("IBO", IBO);
+
+
+    function initializeGL() {
+        programId = gl.createProgram();
+
+        var vertexShaderId = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShaderId, VERTEX_SHADER);
+        gl.compileShader(vertexShaderId);
+        gl.attachShader(programId, vertexShaderId);
+
+        var fragmentShaderId = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShaderId, FRAGMENT_SHADER);
+        gl.compileShader(fragmentShaderId);
+        gl.attachShader(programId, fragmentShaderId);
+
+        gl.linkProgram(programId);
+        gl.deleteShader(vertexShaderId);
+        gl.deleteShader(fragmentShaderId);
+
+        texCoordLocation = gl.getAttribLocation(programId, "VertTexCoord");
+        vertexPos2DLocation = gl.getAttribLocation(programId, "VertexPos2D");
+        // texUnitLocation = gl.getUniformLocation(programId, "TextureUnit");
+        projectionMatrixLocation = gl.getUniformLocation(programId, "ProjectionMatrix");
+        modelViewMatrixLocation = gl.getUniformLocation(programId, "ModelViewMatrix");
+
+        console.log('programId', programId);
+        console.log('vertexShaderId', vertexShaderId);
+        console.log('fragmentShaderId', fragmentShaderId);
+
+        console.log('vertexPos2DLocation', vertexPos2DLocation);
+        console.log('texCoordLocation', texCoordLocation);
+        // console.log('texUnitLocation', texUnitLocation);
+        console.log('projectionMatrixLocation', projectionMatrixLocation);
+        console.log('modelViewMatrixLocation', modelViewMatrixLocation);
+
+
+        gl.useProgram(programId);
+        // gl.activeTexture(gl.TEXTURE0);
+        // gl.uniform1i(texUnitLocation, 0);
+
+
+        // var projectionMatrix = ortho(0, 416, 416, 0);
+        var projectionMatrix = m4.orthographic(0, 416, 416, 0, -1, 1);
+        console.log("projectionMatrix", projectionMatrix);
+
+        gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+        var modelViewMatrix = mat4();
+        // var modelViewMatrix = m4.mat4();
+        gl.uniformMatrix4fv(modelViewMatrixLocation, false, modelViewMatrix);
+        gl.useProgram(null);
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.BLEND);
+        gl.disable(gl.DEPTH_TEST);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+        textureId = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, textureId);
+        var pixelFormat = gl.RGBA;
+        gl.texImage2D(gl.TEXTURE_2D, 0, pixelFormat, pixelFormat, gl.UNSIGNED_BYTE, globalImages[0]);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        // gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    }
+
+    function paintGL() {
+        gl.viewport(0, 0, screenWidth, screenHeight);
+
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enableVertexAttribArray(vertexPos2DLocation);
+        gl.enableVertexAttribArray(texCoordLocation);
+
+        var boundTextureId = null;
+        for (var i = 0; i < locs.length; i++) {
+            var loc = locs[i];
+            var x = loc[0];
+            var y = loc[1];
+            gl.useProgram(programId);
+            var modelViewMatrix = translate(vec3(x, y, 0));
+            // console.log('modelViewMatrix=', modelViewMatrix)
+            gl.uniformMatrix4fv(modelViewMatrixLocation, false, modelViewMatrix);
+            //glUniformMatrix4fv(model_view_matrix_location, 1, GL_FALSE, value_ptr(model_view_matrix))
+
+            if (boundTextureId !== textureId) {
+                gl.bindTexture(gl.TEXTURE_2D, textureId);
+                boundTextureId = textureId;
+                console.log("boundTextureId", boundTextureId);
+            }
+            console.log('textureId', textureId);
+
+
+            // vbo bind
+            gl.bindBuffer(gl.ARRAY_BUFFER, grassVBO);
+            gl.vertexAttribPointer(vertexPos2DLocation, 2, gl.FLOAT, false, 16, 0);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 16, 8);
+            // ibo bind
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, IBO);
+            // gl.drawElements(gl.TRIANGLE_STRIP, 2, gl.UNSIGNED_SHORT, 0);
+            gl.drawElements(gl.TRIANGLE_FAN, 4, gl.UNSIGNED_INT, null);
+            gl.useProgram(null);
+
+            // console.log("draw", grassVBO, IBO);
+            // requestAnimationFrame(function () {
+            //     console.log("FUCK")
+            // });
+        }
+    }
+
+
+
+</script>
+
+</body>
+</html>
